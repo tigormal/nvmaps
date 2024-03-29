@@ -123,7 +123,7 @@ class Map(YAMLWizard):
     def objectNamed(self, name: str, create=False) -> MapObject | None:
         res = next((x for x in self.objects if x.name == name), None)
         if create and res is None:
-            res = MapObject(name=str)
+            res = MapObject(name=name)
             self.addObject(res)
         return res
 
@@ -158,7 +158,7 @@ class Map(YAMLWizard):
     def layerNamed(self, name: str, create=False) -> MapLayer | None:
         res = next((x for x in self.layers if x.name == name), None)
         if create and res is None:
-            res = MapLayer(name=str)
+            res = MapLayer(name=name)
             self.addLayer(res)
         return res
 

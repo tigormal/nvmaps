@@ -54,7 +54,7 @@ class MapLayer(YAMLWizard):
     def objectNamed(self, name: str, create = False) -> MapObject | None:
         res = next((x for x in self.objects if x.name == name), None)
         if create and res is None:
-            res = MapObject(name=str)
+            res = MapObject(name=name)
             self.addObject(res)
         return res
 
