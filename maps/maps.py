@@ -143,14 +143,15 @@ class Map(YAMLWizard):
         if self._path:
             if not self._path.exists():
                 os.mkdir(str(self._path))
-            with Lock(self._path):
-                self.to_yaml_file(str(self._path / Path(DEFAULT_HEADER_NAME)))
+            # with Lock(self._path):
+            self.to_yaml_file(str(self._path / Path(DEFAULT_HEADER_NAME)))
             dispatcher.send(mapSavedEvent, sender=self)
 
     def saveAll(self):
-        self.save()
-        for l in self.layers: l.saveAll()
-        for o in self.objects: o.save()
+        with Lock(self._path):
+            self.save()
+            for l in self.layers: l.saveAll()
+            for o in self.objects: o.save()
 
     def layer(self, num: int) -> MapLayer | None:
         return next((x for x in self.layers if x._layerID == num), None)
@@ -185,6 +186,7 @@ class Map(YAMLWizard):
                 new.reload()
                 print(new)
                 self.objects.append(new)
+                dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": new})
         todelete = oldIDs - newIDs
         print(f"Object IDs to delete:{todelete}")
         for x in self.objects:
