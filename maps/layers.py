@@ -45,8 +45,8 @@ class MapLayer(YAMLWizard):
     # def to_dict(self):
     #     return asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
 
-    def _encoder(self, dic, **kwargs):
-        return yaml.dump({k: v for k, v in dic.items() if v is not None}, **kwargs)
+    def _encoder(self, dic: dict, **kwargs):
+        return yaml.dump({k: v for k, v in dic.copy().items() if v is not None}, **kwargs)
 
     def object(self, num: int) -> MapObject | None:
         return next((x for x in self.objects if x._objectID == num), None)
@@ -75,7 +75,7 @@ class MapLayer(YAMLWizard):
             self.objects.remove(obj)
 
     def PILImageHandle(self, chunk: str):
-        if self._im is None and (img_path := self._images.get(chunk)):
+        if self._im != {} and (img_path := self._images.get(chunk)):
             full_path = self._path / str(img_path)
             if full_path.exists() and full_path.is_file():
                 return Image.open(full_path)
@@ -118,6 +118,15 @@ class MapLayer(YAMLWizard):
         img = Image.fromarray(bytes)
         self._im[chunk] = img
         self._chunksToSave.add(chunk)
+
+    @classmethod
+    def xyzForChunkName(cls, chunk: str):
+        # NW.0.0.0 - example
+        pcs = chunk.split('.')
+        x = int(pcs[1]) * (-1 if pcs[0][1] == 'W' else 1)
+        y = int(pcs[2]) * (-1 if pcs[0][0] == 'S' else 1)
+        z = int(pcs[3])
+        return x, y, z
 
     def chunkForPoint(self, point: list[int | float] | tuple[int | float, ...] | MapObject) -> tuple[str, int, int, int]:
         if isinstance(point, MapObject):
@@ -181,6 +190,7 @@ class MapLayer(YAMLWizard):
                 new.setParent(self)
                 new.reload()
                 self.objects.append(new)
+                dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": new})
         for x in self.objects:
             if x._objectID in objtodelete: self.deleteObject(x)
 
@@ -188,6 +198,9 @@ class MapLayer(YAMLWizard):
         imgfiles = list([Path(p) for p in glob(str(self._path/CHUNK_PATTERN))])
         for file in imgfiles:
             self._images[getChunkName(file)] = file
+
+    def chunksAvailable(self):
+        return self._images
 
     def save(self, img=False):
         print(f"Called save {self._path = }")
@@ -198,8 +211,9 @@ class MapLayer(YAMLWizard):
             print(f"Creating directory for layer at path: {self._path}")
             os.mkdir(self._path)
         if self._hpath != Path():
-            self.to_yaml_file(str(self._hpath),
-                encoder=self._encoder) # type: ignore
+            with Lock(self._path):
+                self.to_yaml_file(str(self._hpath),
+                    encoder=self._encoder) # type: ignore
         if img:
             for chunk in self._chunksToSave: self.saveChunk(chunk)
 
