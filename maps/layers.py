@@ -139,6 +139,15 @@ class MapLayer(YAMLWizard):
         z = int(pcs[3])
         return x, y, z
 
+    @classmethod
+    def xyzForChunkName(cls, chunk: str):
+        # NW.0.0.0 - example
+        pcs = chunk.split('.')
+        x = int(pcs[1]) * (-1 if pcs[0][1] == 'W' else 1)
+        y = int(pcs[2]) * (-1 if pcs[0][0] == 'S' else 1)
+        z = int(pcs[3])
+        return x, y, z
+
     def chunkForPoint(self, point: list[int | float] | tuple[int | float, ...] | MapObject) -> tuple[str, int, int, int]:
         if isinstance(point, MapObject):
             point = point.last
