@@ -36,7 +36,7 @@ class MapLayer(YAMLWizard):
         self._chunksToSave: set[str] = set()
         self._path = Path()
         self._hpath = Path()
-        self._layerID = 0
+        self._layerID = -1
         self._lastSaved = None
         self._images = {}
         self.size = float(self.size)
@@ -59,6 +59,9 @@ class MapLayer(YAMLWizard):
         return res
 
     def addObject(self, obj: MapObject, reload=False, silent=False):
+        if obj._objectID < 0:
+            existingIDs = set([x._objectID for x in self.objects])
+            obj._objectID = max(existingIDs)+1 if len(existingIDs)>0 else 0
         obj.setParent(self)
         if reload: obj.reload()
         self.objects.append(obj)
@@ -86,6 +89,7 @@ class MapLayer(YAMLWizard):
 
     def PILImageHandle(self, chunk: str):
         if self._im != {} and (img_path := self._images.get(chunk)):
+            if img := self._im.get(chunk): return img
             full_path = self._path / str(img_path)
             if full_path.exists() and full_path.is_file():
                 return Image.open(full_path)
@@ -139,15 +143,6 @@ class MapLayer(YAMLWizard):
         z = int(pcs[3])
         return x, y, z
 
-    @classmethod
-    def xyzForChunkName(cls, chunk: str):
-        # NW.0.0.0 - example
-        pcs = chunk.split('.')
-        x = int(pcs[1]) * (-1 if pcs[0][1] == 'W' else 1)
-        y = int(pcs[2]) * (-1 if pcs[0][0] == 'S' else 1)
-        z = int(pcs[3])
-        return x, y, z
-
     def chunkForPoint(self, point: list[int | float] | tuple[int | float, ...] | MapObject) -> tuple[str, int, int, int]:
         if isinstance(point, MapObject):
             point = point.last
@@ -155,13 +150,27 @@ class MapLayer(YAMLWizard):
             coords = (point.x, point.y, point.z) if point.has_z else (point.x, point.y)
         else:
             coords = point
-        x = trunc(coords[0] - self.origin[0] / self.size)
-        y = trunc(coords[1] - self.origin[1] / self.size)
-        z = trunc(coords[2] - self.origin[2] / self.size) if len(coords) >= 3 else 0  # type: ignore
+        # x = trunc(coords[0] / self.size)
+        # y = trunc(coords[1] / self.size)
+        # z = trunc(coords[2] / self.size) if len(coords) >= 3 else 0  # type: ignore
+        x = trunc((coords[0] + self.origin[0]) / self.size)
+        y = trunc((coords[1] + self.origin[1]) / self.size)
+        z = trunc((coords[2] + self.origin[2]) / self.size) if len(coords) >= 3 else 0  # type: ignore
         dir1 = 'N' if x >= 0 else 'S'
         dir2 = 'E' if x >= 0 else 'W'
         name = f"{dir1+dir2}.{str(x)}.{str(y)}.{str(z)}"
         return name, x, y, z
+
+    def toChunkCoordinates(self, chunk:str, point: list[int | float] | tuple[int | float, ...] | MapObject) -> tuple:
+        if isinstance(point, MapObject):
+            point = point.last
+            if not isinstance(point, sh.Point): raise Exception("Given MapObject is not a point")
+            coords = (point.x, point.y, point.z) if point.has_z else (point.x, point.y)
+        else:
+            coords = point
+        x, y, z = self.xyzForChunkName(chunk)
+        res = (point[0]-x, point[1]-y, point[2]-z)
+        return res
 
     def __getitem__(self, item: str | int):
         if isinstance(item, str): return self.objectNamed(item)
@@ -249,10 +258,13 @@ class MapLayer(YAMLWizard):
 
     def saveChunk(self, chunk):
         if img := self._im.get(chunk):
-            path = self._path / chunk / '.tiff'
+            path = self._path / (chunk + '.tiff')
             print(f"Saving chunk image at path: {path}")
             img.save(path, format="TIFF", save_all=True)
             self._im.pop(chunk)
+
+    def saveAllChunks(self):
+        for chunk in list(self._im): self.saveChunk(chunk)
 
     def reloadAll(self):
         self.reload()

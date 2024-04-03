@@ -29,7 +29,7 @@ class MapObject(YAMLWizard):
 
     def __post_init__(self):
         self._parent = None
-        self._objectID = 0
+        self._objectID = -1
         self.ref: Any = None
         self._path = Path()
         self._hpath = Path()

@@ -5,7 +5,7 @@ import shapely as sh
 from pathlib import Path
 from typing import List, DefaultDict, Any, Optional
 from PIL import Image
-import os
+import os, threading
 import  numpy as np
 from pydispatch import dispatcher
 from watchdog.observers import Observer
@@ -207,12 +207,18 @@ class Map(YAMLWizard):
             self._observer.join()
 
     def addObject(self, obj: MapObject, reload=False, silent=False):
+        if obj._objectID < 0:
+            existingIDs = set([x._objectID for x in self.objects])
+            obj._objectID = max(existingIDs)+1 if len(existingIDs)>0 else 0
         obj.setParent(self)
         if reload: obj.reload()
         self.objects.append(obj)
         if not silent: dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": obj})
 
     def addLayer(self, l: MapLayer, silent=False):
+        if l._layerID < 0:
+            existingIDs = set([x._layerID for x in self.layers])
+            l._layerID = max(existingIDs)+1 if len(existingIDs)>0 else 0
         l.setParent(self)
         self.layers.append(l)
         if not silent: dispatcher.send(mapLayerCreatedEvent, sender=self, event={"layer": l})
@@ -249,7 +255,7 @@ class Map(YAMLWizard):
             self.addObject(res)
         return res
 
-    def deleteObject(self, obj: MapObject | None):
+    def deleteObject(self, obj: MapObject | None, fromdisk=False):
         if obj:
             print(f"Delete object called for ID {obj._objectID} in map")
             # try:
@@ -257,7 +263,7 @@ class Map(YAMLWizard):
             #         obj.ref.delete()
             # except:
             #     pass
-            obj.deleteFromDisk()
+            if fromdisk: obj.deleteFromDisk()
             dispatcher.send(mapObjectDeletedEvent, sender=self, event={"object": obj})
             self.objects.remove(obj)
 
@@ -353,11 +359,13 @@ class Map(YAMLWizard):
         dispatcher.send(mapReloadedEvent, sender=self)
 
     def _reloadInfo(self):
-        with open(self._hpath, 'r') as f:
-            dic = yaml.safe_load(f)
-            if val:=dic.get("name"): self.name = val
-            if val:=dic.get("datum"): self.datum = val
-            if val:=dic.get("sys"): self.sys = int(val)
+        if self._hpath.exists() and self._hpath.is_file():
+            with open(self._hpath, 'r') as f:
+                with threading.Lock():
+                    dic = yaml.safe_load(f)
+                    if val:=dic.get("name"): self.name = val
+                    if val:=dic.get("datum"): self.datum = val
+                    if val:=dic.get("sys"): self.sys = int(val)
 
     def reloadAll(self):
         self.reload() # We create and delete layers and objects here
