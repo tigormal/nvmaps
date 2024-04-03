@@ -352,8 +352,12 @@ class Map(YAMLWizard):
 
     def reload(self):
         print("Called reload on map")
-        if not self._path.exists(): self._path.mkdir(parents=True)
-        self._reloadInfo()
+        if not self._path.exists():
+            self._path.mkdir(parents=True)
+        if not self._hpath.exists():
+            self.save()
+        else:
+            self._reloadInfo()
         self._reloadObjects()
         self._reloadLayers()
         dispatcher.send(mapReloadedEvent, sender=self)
