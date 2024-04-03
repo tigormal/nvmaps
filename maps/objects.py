@@ -42,7 +42,7 @@ class MapObject(YAMLWizard):
         # g = {key.astimezone().isoformat(): sh.to_wkt(val) for key, val in self.geometry.copy().items()}
         g = {}
         for key, val in self.geometry.copy().items():
-            print(f"TO_DICT: {type(key), key}: {type(val), val}")
+            # print(f"TO_DICT: {type(key), key}: {type(val), val}")
             g[key.astimezone().isoformat()] = sh.to_wkt(val)
         dic = {
             "NAME": self.name,
@@ -71,8 +71,10 @@ class MapObject(YAMLWizard):
         return encoder(self.to_dict(), **encoder_kwargs)
 
     @property
-    def last(self) -> sh.Geometry:
-        return self.geometry[max(list(self.geometry))]
+    def last(self) -> sh.Geometry | None:
+        g = list(self.geometry)
+        if len(g) == 0: return None
+        return self.geometry[max(g)]
 
     def setParent(self, parent):
         self._parent = parent
@@ -186,6 +188,6 @@ class MapObject(YAMLWizard):
                     self.geometry[dt.now(dt.now().astimezone().tzinfo)] = val
                 continue
             if hasattr(self, key):
-                print(f"{self._objectID} Updating {key = } {val =}")
+                # print(f"{self._objectID} Updating {key = } {val =}")
                 self.__setattr__(key, val)
         dispatcher.send(mapObjectUpdatedEvent, sender=self, event={"change": dic})

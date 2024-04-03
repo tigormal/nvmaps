@@ -58,21 +58,31 @@ class MapLayer(YAMLWizard):
             self.addObject(res)
         return res
 
-    def addObject(self, obj: MapObject):
+    def addObject(self, obj: MapObject, reload=False, silent=False):
         obj.setParent(self)
+        if reload: obj.reload()
         self.objects.append(obj)
-        dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": obj})
+        if not silent: dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": obj})
 
-    def deleteObject(self, obj: MapObject | None):
+    def deleteObject(self, obj: MapObject | None, fromdisk=True):
+        print(f"Delete object called for ID {obj._objectID} in layer {self._layerID}")
         if obj:
-            try:
-                if obj.ref is not None:
-                    obj.ref.delete()
-            except:
-                pass
+            print("Deleting...")
+            # try:
+            #     if obj.ref is not None:
+            #         obj.ref.delete()
+            # except:
+            #     pass
             dispatcher.send(mapObjectDeletedEvent, sender=self, event={"object": obj})
-            obj.deleteFromDisk()
+            if fromdisk: obj.deleteFromDisk()
             self.objects.remove(obj)
+
+    def deleteChunk(self, chunk: str | None, fromdisk=True):
+        if chunk and (chunkpath := self._images.get(chunk)):
+            dispatcher.send(mapObjectDeletedEvent, sender=self, event={"chunk": chunk, "path": chunkpath})
+            if fromdisk: os.unlink(chunkpath)
+            self._images.pop(chunk)
+            dispatcher.send(mapLayerChunkDeletedEvent, sender=self, event={"chunk": chunk})
 
     def PILImageHandle(self, chunk: str):
         if self._im != {} and (img_path := self._images.get(chunk)):
@@ -104,7 +114,7 @@ class MapLayer(YAMLWizard):
         for key, val in dic.items():
             if key.startswith('_'): continue  # skip private
             if hasattr(self, key):
-                print(f"L{self._layerID} Updating {key = } {val =}")
+                # print(f"L{self._layerID} Updating {key = } {val =}")
                 self.__setattr__(key, val)
         dispatcher.send(mapLayerUpdatedEvent, sender=self, event={"change": dic})
 
@@ -118,6 +128,7 @@ class MapLayer(YAMLWizard):
         img = Image.fromarray(bytes)
         self._im[chunk] = img
         self._chunksToSave.add(chunk)
+        dispatcher.send(mapLayerChunkUpdatedEvent, sender=self, event={"chunk": chunk})
 
     @classmethod
     def xyzForChunkName(cls, chunk: str):
@@ -162,16 +173,21 @@ class MapLayer(YAMLWizard):
         for obj in self.objects: obj.setParent(self)
 
     def reload(self):
+        self._reloadInfo()
+        self._reloadObjects()
+        self._reloadImages()
+
+    def _reloadInfo(self):
         if self._hpath != Path():
             new = MapLayer.from_yaml_file(str(self._hpath))
             if isinstance(new, list): new = new[0]
             # self.update(yaml.safe_load(self._hpath.read_text()))
             self.update(asdict(new))
 
-        def getObjectID(path: Path): return int(path.stem)
-        def getChunkName(path: Path): return path.stem
+    def _reloadObjects(self):
 
-        # Reload objects
+        def getObjectID(path: Path): return int(path.stem)
+
         objfiles = list([Path(p) for p in glob(str(self._path/OBJECT_PATTERN))])
         newObjectIDs = list([getObjectID(o) for o in objfiles])
         objTup = zip(objfiles, newObjectIDs)
@@ -194,10 +210,15 @@ class MapLayer(YAMLWizard):
         for x in self.objects:
             if x._objectID in objtodelete: self.deleteObject(x)
 
-        # Reload image paths
+    def _reloadImages(self):
+        def getChunkName(path: Path): return path.stem
         imgfiles = list([Path(p) for p in glob(str(self._path/CHUNK_PATTERN))])
         for file in imgfiles:
             self._images[getChunkName(file)] = file
+
+    def addChunk(self, chunk, file):
+        self._images[chunk] = file
+        dispatcher.send(mapLayerChunkCreatedEvent, sender=self, event={"chunk": chunk, "path":file})
 
     def chunksAvailable(self):
         return self._images
@@ -209,7 +230,7 @@ class MapLayer(YAMLWizard):
             return
         if not self._path.exists():
             print(f"Creating directory for layer at path: {self._path}")
-            os.mkdir(self._path)
+            self._path.mkdir(parents=True)
         if self._hpath != Path():
             with Lock(self._path):
                 self.to_yaml_file(str(self._hpath),
