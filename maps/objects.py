@@ -34,6 +34,9 @@ class MapObject(YAMLWizard):
         self._path = Path()
         self._hpath = Path()
         self._lastSaved = None
+        self._needsSave = False
+        self._needsReload = True
+        self._h = None
         self.geometry = {dt.fromisoformat(key): sh.from_wkt(val) for key, val in self.geometry.copy().items()}
         # for key, val in self.geometry:
             # self.geometry[key] = sh.from_wkt(val)
@@ -78,6 +81,7 @@ class MapObject(YAMLWizard):
 
     def setParent(self, parent):
         self._parent = parent
+        self._h = parent._h
         self._calculatePath()
 
     def makePoint(self, coords: Iterable[int | float], time=None):
@@ -138,8 +142,14 @@ class MapObject(YAMLWizard):
         else:
             self._path = Path()
 
-    def reload(self):
-        if self._path.exists():
+    def lazyReload(self):
+        self._needsReload = True
+
+    def lazySave(self):
+        self._needsSave = True
+
+    def reload(self, force=False):
+        def procReload():
             try:
                 new = MapObject.from_yaml_file(str(self._path))
             except Exception as e:
@@ -148,23 +158,32 @@ class MapObject(YAMLWizard):
             if isinstance(new, list): new = new[0]
             print(f"{self._objectID} RELOAD \n{asdict(new)}")
             self.update(asdict(new))
+            self._needsReload = False
             # self.from_yaml_file(str(self._path))
             # dic = yaml.safe_load(self._path.read_text())
             # self.update(dic, skipGeometry=True)
             # self.geometry = {key.fromisoformat(): sh.from_wkt(val) for key, val in dic.geometry.items()}
+        if (self._needsReload or force) and self._path.exists():
+            if self._h: self._h.put((procReload, []))
 
-    def save(self):
+
+    def save(self, force=False):
+
+        def procSave():
+            # with Lock():
+            self.to_yaml_file(str(self._path), encoder=self._encoder) # type: ignore
+            self._needsSave = False
+
         print(f"Called save {self._path = }")
-        if self._path != Path():
-            with Lock():
-                self.to_yaml_file(str(self._path), encoder=self._encoder) # type: ignore
+        if (self._needsSave or force) and self._path != Path():
+            if self._h: self._h.put((procSave, []))
 
     def deleteFromDisk(self):
         if self._path != Path():
             print(f"Deleting object file: {self._path}")
             os.unlink(self._path)
 
-    def update(self, dic: dict[str, Any], modifyGeometry=False, skipGeometry=False):
+    def update(self, dic: dict[str, Any], *, modifyGeometry=False, skipGeometry=False):
         for key, val in dic.items():
             if key == 'geometry':
                 if skipGeometry: continue
@@ -191,3 +210,4 @@ class MapObject(YAMLWizard):
                 # print(f"{self._objectID} Updating {key = } {val =}")
                 self.__setattr__(key, val)
         dispatcher.send(mapObjectUpdatedEvent, sender=self, event={"change": dic})
+        self._needsSave = True

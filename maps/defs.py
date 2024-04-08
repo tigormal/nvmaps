@@ -19,6 +19,9 @@ mapLayerUpdatedEvent = 'mapLayerUpdatedEvent'
 mapLayerChunkUpdatedEvent = 'mapLayerChunkUpdatedEvent'
 mapLayerChunkCreatedEvent = 'mapLayerChunkCreatedEvent'
 mapLayerChunkDeletedEvent = 'mapLayerChunkDeletedEvent'
+mapFileCreatedEvent = 'mapFileCreatedEvent'
+mapFileUpdatedEvent = 'mapFileUpdatedEvent'
+mapFileDeletedEvent = 'mapFileDeletedEvent'
 
 # Enums
 class LayerKind(Enum):

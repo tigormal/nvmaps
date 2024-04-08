@@ -38,6 +38,9 @@ class MapLayer(YAMLWizard):
         self._hpath = Path()
         self._layerID = -1
         self._lastSaved = None
+        self._needsSave = False
+        self._needsReload = True
+        self._h = None
         self._images = {}
         self.size = float(self.size)
         self.ref = None
@@ -51,14 +54,14 @@ class MapLayer(YAMLWizard):
     def object(self, num: int) -> MapObject | None:
         return next((x for x in self.objects if x._objectID == num), None)
 
-    def objectNamed(self, name: str, create = False) -> MapObject | None:
+    def objectNamed(self, name: str, *, create = False) -> MapObject | None:
         res = next((x for x in self.objects if x.name == name), None)
         if create and res is None:
             res = MapObject(name=name)
             self.addObject(res)
         return res
 
-    def addObject(self, obj: MapObject, reload=False, silent=False):
+    def addObject(self, obj: MapObject, *, reload=False, silent=False):
         if obj._objectID < 0:
             existingIDs = set([x._objectID for x in self.objects])
             obj._objectID = max(existingIDs)+1 if len(existingIDs)>0 else 0
@@ -67,7 +70,7 @@ class MapLayer(YAMLWizard):
         self.objects.append(obj)
         if not silent: dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": obj})
 
-    def deleteObject(self, obj: MapObject | None, fromdisk=True):
+    def deleteObject(self, obj: MapObject | None, *, fromdisk=True):
         print(f"Delete object called for ID {obj._objectID} in layer {self._layerID}")
         if obj:
             print("Deleting...")
@@ -80,7 +83,7 @@ class MapLayer(YAMLWizard):
             if fromdisk: obj.deleteFromDisk()
             self.objects.remove(obj)
 
-    def deleteChunk(self, chunk: str | None, fromdisk=True):
+    def deleteChunk(self, chunk: str | None, *, fromdisk=True):
         if chunk and (chunkpath := self._images.get(chunk)):
             dispatcher.send(mapObjectDeletedEvent, sender=self, event={"chunk": chunk, "path": chunkpath})
             if fromdisk: os.unlink(chunkpath)
@@ -187,22 +190,34 @@ class MapLayer(YAMLWizard):
 
     def setParent(self, parent):
         self._parent = parent
+        self._h = parent._h
         self._calculatePath()
         for obj in self.objects: obj.setParent(self)
 
-    def reload(self):
-        self._reloadInfo()
-        self._reloadObjects()
-        self._reloadImages()
+    def lazyReload(self):
+        self._needsReload = True
 
-    def _reloadInfo(self):
+    def lazySave(self):
+        self._needsSave = True
+
+    def reload(self, force=False):
+        def procReload():
+            self._reloadInfo(force)
+            self._reloadObjects(force)
+            self._reloadImages(force)
+            self._needsReload = False
+
+        if (self._needsReload or force):
+            if self._h: self._h.put((procReload, []))
+
+    def _reloadInfo(self, force=False):
         if self._hpath != Path():
             new = MapLayer.from_yaml_file(str(self._hpath))
             if isinstance(new, list): new = new[0]
             # self.update(yaml.safe_load(self._hpath.read_text()))
             self.update(asdict(new))
 
-    def _reloadObjects(self):
+    def _reloadObjects(self, force=False):
 
         def getObjectID(path: Path): return int(path.stem)
 
@@ -228,7 +243,7 @@ class MapLayer(YAMLWizard):
         for x in self.objects:
             if x._objectID in objtodelete: self.deleteObject(x)
 
-    def _reloadImages(self):
+    def _reloadImages(self, force=False):
         def getChunkName(path: Path): return path.stem
         imgfiles = list([Path(p) for p in glob(str(self._path/CHUNK_PATTERN))])
         for file in imgfiles:
@@ -241,20 +256,31 @@ class MapLayer(YAMLWizard):
     def chunksAvailable(self):
         return self._images
 
-    def save(self, img=False):
-        print(f"Called save {self._path = }")
-        if self._path == Path():
-            print("Attempting to save with empty path")
-            return
-        if not self._path.exists():
-            print(f"Creating directory for layer at path: {self._path}")
-            self._path.mkdir(parents=True)
-        if self._hpath != Path():
-            with Lock(self._path):
+    def save(self, img=False, force=False):
+
+        def procSave():
+            if self._path == Path():
+                print("Attempting to save with empty path")
+                return
+            if not self._path.exists():
+                print(f"Creating directory for layer at path: {self._path}")
+                self._path.mkdir(parents=True)
+            if self._hpath != Path():
+                # with Lock(self._path):
                 self.to_yaml_file(str(self._hpath),
                     encoder=self._encoder) # type: ignore
-        if img:
+            self._needsSave = False
+
+        def procSaveImg():
             for chunk in self._chunksToSave: self.saveChunk(chunk)
+
+        if self._needsSave or force:
+            print(f"Called save {self._path = }")
+            if self._h: self._h.put((procSave, []))
+
+        if img:
+            if self._h: self._h.put((procSaveImg, []))
+
 
     def saveChunk(self, chunk):
         if img := self._im.get(chunk):
@@ -266,13 +292,13 @@ class MapLayer(YAMLWizard):
     def saveAllChunks(self):
         for chunk in list(self._im): self.saveChunk(chunk)
 
-    def reloadAll(self):
-        self.reload()
-        for obj in self.objects: obj.reload()
+    def reloadAll(self, force=False):
+        self.reload(force=force)
+        for obj in self.objects: obj.reload(force=force)
 
-    def saveAll(self):
-        self.save()
-        for obj in self.objects: obj.save()
+    def saveAll(self, force=False):
+        self.save(force=force)
+        for obj in self.objects: obj.save(force=force)
 
     def deleteFromDisk(self):
         self.objects.clear()
