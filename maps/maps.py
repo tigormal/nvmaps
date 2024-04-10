@@ -37,8 +37,13 @@ class DelayedHandler():
         while True:
             if self._stop: break
             func, args = self.queue.get()
-            func(*args)
-            # if self._stop: break
+            try:
+                func(*args)
+                print(f"Task done: {func.__name__}")
+            except Exception as e:
+                print(f"Task failed: {func.__name__}. Reason: {e}")
+            self.queue.task_done()
+            if self._stop: break
             # self.checkSaveReload()
             #
     def put(self, *args):
@@ -52,9 +57,12 @@ class DelayedHandler():
                 self._lastCheck = dt.now()
                 self.parent.reloadAll()
                 self.parent.saveAll()
+            # self.queue.join()
 
     def stop(self):
         self._stop = True
+        self.queue.join()
+        self.queue.put((print, [""]))
 
     def start(self):
         self.th.start()
@@ -90,7 +98,7 @@ class MapFileHandler(watchdog.events.PatternMatchingEventHandler):
             path = Path(src_path)
             if path.name == DEFAULT_HEADER_NAME:
                 with threading.Lock():
-                    self.parent._reloadInfo()
+                    self.parent._reloadInfo(force=True)
                 print(f"UPDATED MAP INFO")
                 return
             if path.stem[0].isdigit():
@@ -98,7 +106,8 @@ class MapFileHandler(watchdog.events.PatternMatchingEventHandler):
                 onum = int(path.stem)
                 if o := self.parent.object(onum):
                     # with threading.Lock():
-                    o.lazyReload()
+                    # o.lazyReload()
+                    o.reload(force=True)
                     print(f"UPDATED OBJECT {onum} in map")
 
     def on_deleted_handler(self, src_path):
@@ -126,11 +135,13 @@ class MapFileHandler(watchdog.events.PatternMatchingEventHandler):
                 onum = int(path.stem)
                 if o := self.parent.object(onum):
                     # with threading.Lock():
-                    o.lazyReload()
+                    # o.lazyReload()
+                    o.reload(force=True)
                 else:
                     new = MapObject()
                     new._objectID = onum
-                    new.lazyReload()
+                    # new.lazyReload()
+                    new.reload(force=True)
                     self.parent.addObject(new)
                 print(f"CREATED OBJECT {onum} in map")
 
@@ -168,8 +179,8 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
             if path.name == DEFAULT_HEADER_NAME:
                 if l := self.parent.layer(lnum):
                     # with threading.Lock():
-                        # l._reloadInfo()
-                    l.lazyReload()
+                    l._reloadInfo(force=True)
+                    # l.lazyReload()
                     print(f"UPDATED LAYER {lnum} INFO")
                 return
             if path.stem[0].isdigit():
@@ -178,7 +189,8 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
                 if l := self.parent.layer(lnum):
                     if o := l.object(onum):
                         # with threading.Lock():
-                        o.lazyReload()
+                        # o.lazyReload()
+                        o.reload(force=True)
                         print(f"UPDATED OBJECT {onum} in layer {lnum}")
                     # l._reloadObjects()
             else:
@@ -218,12 +230,14 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
                 if l:=self.parent.layer(lnum):
                     # with threading.Lock():
                     # l.reload()
-                    l.lazyReload()
+                    # l.lazyReload()
+                    l._reloadInfo(force=True)
                 else:
                     new = MapLayer()
                     new._layerID = lnum
                     # with threading.Lock():
-                    new.lazyReload()
+                    # new.lazyReload()
+                    new.reload(force=True)
                     self.parent.addLayer(new)
                     print(f"CREATED LAYER {lnum} in map")
                 return
@@ -235,12 +249,14 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
                     # l._reloadObjects()
                     if o:=l.object(onum):
                         # with threading.Lock():
-                        o.lazyReload()
+                        # o.lazyReload()
+                        o.reload(force=True)
                     else:
                         new = MapObject()
                         new._objectID = onum
                         # with threading.Lock():
-                        new.lazyReload()
+                        # new.lazyReload()
+                        new.reload(force=True)
                         l.addObject(new)
                         print(f"CREATED OBJECT {onum} in layer {lnum}")
             else:
@@ -381,6 +397,7 @@ class Map(YAMLWizard):
             if not self._path.exists():
                 os.mkdir(str(self._path))
             # with Lock(self._path):
+            # with threading.Lock():
             self.to_yaml_file(str(self._path / Path(DEFAULT_HEADER_NAME)))
             dispatcher.send(mapSavedEvent, sender=self)
 
@@ -408,6 +425,7 @@ class Map(YAMLWizard):
         def getObjectID(path: Path): return int(path.stem)
 
         files = iglob(str(self._path / OBJECT_PATTERN))
+        print(f"Map Reloading object files: {list(files)}")
         oldIDs = set([o._objectID for o in self.objects])
         newIDs = set()
         for file in files:
@@ -479,13 +497,20 @@ class Map(YAMLWizard):
             dispatcher.send(mapReloadedEvent, sender=self)
             self._needsReload = False
 
-        if flag: self._h.put((procReload, []))
+        if force:
+            procReload()
+            return
+        if self._needsReload:
+            self._h.put((procReload, []))
+            return
 
-    def _reloadInfo(self):
+
+    def _reloadInfo(self, force=False):
         if self._hpath.exists() and self._hpath.is_file():
             with open(self._hpath, 'r') as f:
-                # with threading.Lock():
-                dic = yaml.safe_load(f)
+                with threading.Lock():
+                    dic = yaml.safe_load(f)
+                print(f"Reloading map info, read dict from file: {dic}")
                 if val:=dic.get("name"): self.name = val
                 if val:=dic.get("datum"): self.datum = val
                 if val:=dic.get("sys"): self.sys = int(val)
@@ -520,7 +545,7 @@ class Map(YAMLWizard):
         instance = cls()
         instance._path = full_path
         instance._calculatePath()
-        instance.reloadAll()
+        instance.reloadAll(force=True)
 
         if observe:
             instance.start()

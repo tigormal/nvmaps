@@ -12,6 +12,7 @@ from pydispatch import dispatcher
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from lockfile import Lock
+import threading
 from glob import glob
 from .defs import *
 from .objects import MapObject
@@ -97,31 +98,20 @@ class MapLayer(YAMLWizard):
             if full_path.exists() and full_path.is_file():
                 return Image.open(full_path)
 
-    # def path(self) -> Path:
-    #     if self._parent is None:
-    #         return Path()
-    #     pre_path = Path(self._parent.path).expanduser().resolve()
-    #     if not (Path(pre_path) / Path(self.name)).exists():
-    #         os.mkdir(str(Path(pre_path) / Path(self.name)))
-    #     full_path = Path(pre_path) / Path(self.name)
-    #     return full_path
+    _propNames = {
+        "TYPE" : "kind",
+        "NAME" : "name",
+        "SIZE": "size",
+        "ORIG": "origin",
+        "SRC": "source"
+    }
 
-    # def save(self):
-    #     if self._im:
-    #         pre_path = (
-    #             Path(self._parent.path) if (self._parent is not None) else Path("")
-    #         )
-    #         if not (Path(pre_path) / Path(self.name)).exists():
-    #             os.mkdir(str(Path(pre_path) / Path(self.name)))
-    #         path = pre_path / Path(self.name) / Path(self.image)
-    #         self._im.save(path, format="TIFF", save_all=True)
-            # self._needsImSave = False
-            #
     def update(self, dic: dict[str, Any]):
         for key, val in dic.items():
             if key.startswith('_'): continue  # skip private
+            key = self._propNames[key]
+            print(f"L{self._layerID} Updating {key = } {val = }")
             if hasattr(self, key):
-                # print(f"L{self._layerID} Updating {key = } {val =}")
                 self.__setattr__(key, val)
         dispatcher.send(mapLayerUpdatedEvent, sender=self, event={"change": dic})
 
@@ -153,9 +143,6 @@ class MapLayer(YAMLWizard):
             coords = (point.x, point.y, point.z) if point.has_z else (point.x, point.y)
         else:
             coords = point
-        # x = trunc(coords[0] / self.size)
-        # y = trunc(coords[1] / self.size)
-        # z = trunc(coords[2] / self.size) if len(coords) >= 3 else 0  # type: ignore
         x = trunc((coords[0] + self.origin[0]) / self.size)
         y = trunc((coords[1] + self.origin[1]) / self.size)
         z = trunc((coords[2] + self.origin[2]) / self.size) if len(coords) >= 3 else 0  # type: ignore
@@ -207,28 +194,41 @@ class MapLayer(YAMLWizard):
             self._reloadImages(force)
             self._needsReload = False
 
-        if (self._needsReload or force):
+        if force:
+            procReload()
+            return
+        if self._needsReload:
             if self._h: self._h.put((procReload, []))
 
     def _reloadInfo(self, force=False):
         if self._hpath != Path():
-            new = MapLayer.from_yaml_file(str(self._hpath))
-            if isinstance(new, list): new = new[0]
+            with open(self._hpath, 'r') as f:
+                with threading.Lock():
+                    # s = f.read()
+                    dic = yaml.safe_load(f)
+                print(f"Reloading layer info, read dict from file: {dic}")
+                # new = MapLayer.from_yaml_file(str(self._hpath))
+                # new = MapLayer.from_yaml(s)
+            # if isinstance(new, list): new = new[0]
             # self.update(yaml.safe_load(self._hpath.read_text()))
-            self.update(asdict(new))
+            # self.update(asdict(new))
+            self.update(dic)
 
     def _reloadObjects(self, force=False):
 
         def getObjectID(path: Path): return int(path.stem)
 
         objfiles = list([Path(p) for p in glob(str(self._path/OBJECT_PATTERN))])
+        print(f"L{self._layerID} Reloading object files: {list(objfiles)}")
         newObjectIDs = list([getObjectID(o) for o in objfiles])
         objTup = zip(objfiles, newObjectIDs)
-        print(objTup)
+        # print(objTup)
+        print(f"L{self._layerID} Existing objects: {self.objects}")
         oldObjectIDs = set([o._objectID for o in self.objects])
         newObjectIDs = set(newObjectIDs)
         objtocreate = newObjectIDs - oldObjectIDs
         objtodelete = oldObjectIDs - newObjectIDs
+        print(f"Objects to be created: {objtocreate} \nObjects to be deleted: {objtodelete}")
         for file, num in objTup:
             if num in objtocreate:
                 # new = MapObject.from_yaml_file(str(file))
@@ -237,7 +237,7 @@ class MapLayer(YAMLWizard):
                 if len(oldObjectIDs) == 0: new._objectID = 0
                 else: new._objectID = max(oldObjectIDs)+1
                 new.setParent(self)
-                new.reload()
+                new.reload(force)
                 self.objects.append(new)
                 dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": new})
         for x in self.objects:
@@ -266,9 +266,8 @@ class MapLayer(YAMLWizard):
                 print(f"Creating directory for layer at path: {self._path}")
                 self._path.mkdir(parents=True)
             if self._hpath != Path():
-                # with Lock(self._path):
-                self.to_yaml_file(str(self._hpath),
-                    encoder=self._encoder) # type: ignore
+                with threading.Lock():
+                    self.to_yaml_file(str(self._hpath), encoder=self._encoder) # type: ignore
             self._needsSave = False
 
         def procSaveImg():
@@ -286,7 +285,8 @@ class MapLayer(YAMLWizard):
         if img := self._im.get(chunk):
             path = self._path / (chunk + '.tiff')
             print(f"Saving chunk image at path: {path}")
-            img.save(path, format="TIFF", save_all=True)
+            with threading.Lock():
+                img.save(path, format="TIFF", save_all=True)
             self._im.pop(chunk)
 
     def saveAllChunks(self):

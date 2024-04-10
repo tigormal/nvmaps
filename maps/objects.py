@@ -32,7 +32,6 @@ class MapObject(YAMLWizard):
         self._objectID = -1
         self.ref: Any = None
         self._path = Path()
-        self._hpath = Path()
         self._lastSaved = None
         self._needsSave = False
         self._needsReload = True
@@ -151,27 +150,38 @@ class MapObject(YAMLWizard):
     def reload(self, force=False):
         def procReload():
             try:
-                new = MapObject.from_yaml_file(str(self._path))
+                with open(self._path, 'r') as f:
+                    with Lock():
+                        # s = f.read()
+                        dic = yaml.safe_load(f)
+                    print(f"Reloading object info, read dict from file: {dic}")
+                    # new = MapObject.from_yaml_file(str(self._path))
+                    # new = MapObject.from_yaml(s)
             except Exception as e:
-                print(f"Reload failed. Reason: {e}")
+                print(f"Reload for object {self._objectID} failed. Reason: {e}")
                 return
-            if isinstance(new, list): new = new[0]
-            print(f"{self._objectID} RELOAD \n{asdict(new)}")
-            self.update(asdict(new))
+            # if isinstance(new, list): new = new[0]
+            # print(f"{self._objectID} RELOAD \n{asdict(new)}")
+            # self.update(asdict(new))
+            self.update(dic)
             self._needsReload = False
             # self.from_yaml_file(str(self._path))
             # dic = yaml.safe_load(self._path.read_text())
             # self.update(dic, skipGeometry=True)
             # self.geometry = {key.fromisoformat(): sh.from_wkt(val) for key, val in dic.geometry.items()}
-        if (self._needsReload or force) and self._path.exists():
-            if self._h: self._h.put((procReload, []))
+        if self._path.exists():
+            if force:
+                procReload()
+                return
+            if self._needsReload:
+                if self._h: self._h.put((procReload, []))
 
 
     def save(self, force=False):
 
         def procSave():
-            # with Lock():
-            self.to_yaml_file(str(self._path), encoder=self._encoder) # type: ignore
+            with Lock():
+                self.to_yaml_file(str(self._path), encoder=self._encoder) # type: ignore
             self._needsSave = False
 
         print(f"Called save {self._path = }")
@@ -181,10 +191,27 @@ class MapObject(YAMLWizard):
     def deleteFromDisk(self):
         if self._path != Path():
             print(f"Deleting object file: {self._path}")
-            os.unlink(self._path)
+            with Lock():
+                os.unlink(self._path)
+
+
+    _propNames = {
+        "GEOM" : "geometry",
+        "NAME" : "name",
+        "COL": "color",
+        "ST": "showtext",
+        "HL": "highlight",
+        "ANC": "anchors",
+        "HEAD": "heading",
+        "ICON": "icon",
+        "MODS": "mods",
+        "AMPS": "amps"
+    }
 
     def update(self, dic: dict[str, Any], *, modifyGeometry=False, skipGeometry=False):
         for key, val in dic.items():
+            key = self._propNames[key]
+            print(f"{self._objectID} Updating {key = } {val =}")
             if key == 'geometry':
                 if skipGeometry: continue
                 if isinstance(val, dict):
@@ -207,7 +234,16 @@ class MapObject(YAMLWizard):
                     self.geometry[dt.now(dt.now().astimezone().tzinfo)] = val
                 continue
             if hasattr(self, key):
-                # print(f"{self._objectID} Updating {key = } {val =}")
                 self.__setattr__(key, val)
         dispatcher.send(mapObjectUpdatedEvent, sender=self, event={"change": dic})
         self._needsSave = True
+
+    @classmethod
+    def load(cls, file: Path | str):
+        path = Path(file).expanduser().resolve()
+        parent_path = path.parents[1]
+        if (parent_path.stem[0] == 'L' and parent_path.stem[1].isdigit()) or parent_path.suffix == '.map':
+            inst = MapObject()
+            inst._path = path
+        else:
+            raise Exception(f"Object file is not within map or map layer. Path: {file}")
