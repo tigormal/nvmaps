@@ -164,6 +164,7 @@ class MapObject(YAMLWizard):
             # print(f"{self._objectID} RELOAD \n{asdict(new)}")
             # self.update(asdict(new))
             self.update(dic)
+            self._needsSave = False
             self._needsReload = False
             # self.from_yaml_file(str(self._path))
             # dic = yaml.safe_load(self._path.read_text())

@@ -67,7 +67,7 @@ class MapLayer(YAMLWizard):
             existingIDs = set([x._objectID for x in self.objects])
             obj._objectID = max(existingIDs)+1 if len(existingIDs)>0 else 0
         obj.setParent(self)
-        if reload: obj.reload()
+        if reload: obj.reload(force=True)
         self.objects.append(obj)
         if not silent: dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": obj})
 

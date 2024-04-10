@@ -141,8 +141,8 @@ class MapFileHandler(watchdog.events.PatternMatchingEventHandler):
                     new = MapObject()
                     new._objectID = onum
                     # new.lazyReload()
-                    new.reload(force=True)
-                    self.parent.addObject(new)
+                    # new.reload(force=True)
+                    self.parent.addObject(new, reload=True)
                 print(f"CREATED OBJECT {onum} in map")
 
 
@@ -256,8 +256,10 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
                         new._objectID = onum
                         # with threading.Lock():
                         # new.lazyReload()
-                        new.reload(force=True)
-                        l.addObject(new)
+                        #
+                        # new.setParent(l)
+                        # new.reload(force=True)
+                        l.addObject(new, reload=True)
                         print(f"CREATED OBJECT {onum} in layer {lnum}")
             else:
                 # that's chunk image
@@ -328,7 +330,7 @@ class Map(YAMLWizard):
             existingIDs = set([x._objectID for x in self.objects])
             obj._objectID = max(existingIDs)+1 if len(existingIDs)>0 else 0
         obj.setParent(self)
-        if reload: obj.reload()
+        if reload: obj.reload(force=True)
         self.objects.append(obj)
         if not silent: dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": obj})
 
@@ -425,28 +427,32 @@ class Map(YAMLWizard):
         def getObjectID(path: Path): return int(path.stem)
 
         files = iglob(str(self._path / OBJECT_PATTERN))
-        print(f"Map Reloading object files: {list(files)}")
+        # print(f"Map Reloading object files: {list(files)}")
         oldIDs = set([o._objectID for o in self.objects])
         newIDs = set()
+        print(f"Map Existing objects: {oldIDs}")
         for file in files:
+            print(f"Map Reloading object file: {file}")
             path = Path(file)
             id = getObjectID(path)
             newIDs.add(id)
-            if id in oldIDs:
-                ## Exists, ~~reload~~ do nothing
-                ...
-            elif not id in oldIDs:
+            # if id in oldIDs:
+            #     ## Exists, ~~reload~~ do nothing
+            #     ...
+            if not (id in oldIDs):
                 ## Load file and add to this map
                 print(f"Creating object with ID {id}:")
                 new = MapObject()
                 if isinstance(new, list): new = new[0]
                 new._objectID = id
                 new.setParent(self)
-                new._needsReload = True
-                # new.reload()
+                # new._needsReload = True
+                new.reload(force)
                 # print(new)
                 self.objects.append(new)
                 dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": new})
+            # else:
+            #     print(f"Object ID {id} is in existing IDs")
         todelete = oldIDs - newIDs
         print(f"Object IDs to delete:{todelete}")
         for x in self.objects:
