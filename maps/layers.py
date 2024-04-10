@@ -109,7 +109,8 @@ class MapLayer(YAMLWizard):
     def update(self, dic: dict[str, Any]):
         for key, val in dic.items():
             if key.startswith('_'): continue  # skip private
-            key = self._propNames[key]
+            if key in list(self._propNames):
+                key = self._propNames[key]
             print(f"L{self._layerID} Updating {key = } {val = }")
             if hasattr(self, key):
                 self.__setattr__(key, val)

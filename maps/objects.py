@@ -211,7 +211,8 @@ class MapObject(YAMLWizard):
 
     def update(self, dic: dict[str, Any], *, modifyGeometry=False, skipGeometry=False):
         for key, val in dic.items():
-            key = self._propNames[key]
+            if key in list(self._propNames):
+                key = self._propNames[key]
             print(f"{self._objectID} Updating {key = } {val =}")
             if key == 'geometry':
                 if skipGeometry: continue
