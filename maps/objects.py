@@ -164,7 +164,7 @@ class MapObject(YAMLWizard):
                     with Lock():
                         # s = f.read()
                         dic = yaml.safe_load(f)
-                    print(f"Reloading object info, read dict from file: {dic}")
+                    # print(f"Reloading object info, read dict from file: {dic}")
                     # new = MapObject.from_yaml_file(str(self._path))
                     # new = MapObject.from_yaml(s)
             except Exception as e:
@@ -241,7 +241,7 @@ class MapObject(YAMLWizard):
             # print(f"{self._objectID} Updating {key = } {val =}")
             if key == 'geometry':
                 if skipGeometry: continue
-                print(f"{self._objectID} Updating {key = } {val = }")
+                # print(f"{self._objectID} Updating {key = } {val = }")
                 if isinstance(val, dict): # given a dict[time, wkt]
                     if not modifyGeometry: self.geometry.clear()
                     for k, v in val.items():

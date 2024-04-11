@@ -216,7 +216,7 @@ class MapLayer(YAMLWizard):
                     with threading.Lock():
                         # s = f.read()
                         dic = yaml.safe_load(f)
-                    print(f"Reloading layer info, read dict from file: {dic}")
+                    # print(f"Reloading layer info, read dict from file: {dic}")
                     # new = MapLayer.from_yaml_file(str(self._hpath))
                     # new = MapLayer.from_yaml(s)
             except Exception as e:
