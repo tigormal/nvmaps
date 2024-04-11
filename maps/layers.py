@@ -41,6 +41,7 @@ class MapLayer(YAMLWizard):
         self._lastSaved = None
         self._needsSave = False
         self._needsReload = True
+        self._skipNextReload = False
         self._h = None
         self._images = {}
         self.size = float(self.size)
@@ -111,7 +112,7 @@ class MapLayer(YAMLWizard):
             if key.startswith('_'): continue  # skip private
             if key in list(self._propNames):
                 key = self._propNames[key]
-            print(f"L{self._layerID} Updating {key = } {val = }")
+            # print(f"L{self._layerID} Updating {key = } {val = }")
             if hasattr(self, key):
                 self.__setattr__(key, val)
         dispatcher.send(mapLayerUpdatedEvent, sender=self, event={"change": dic})
@@ -202,6 +203,9 @@ class MapLayer(YAMLWizard):
             if self._h: self._h.put((procReload, []))
 
     def _reloadInfo(self, force=False):
+        if self._skipNextReload:
+            self._skipNextReload = False
+            return
         if self._hpath != Path():
             with open(self._hpath, 'r') as f:
                 with threading.Lock():
@@ -267,14 +271,24 @@ class MapLayer(YAMLWizard):
                 print(f"Creating directory for layer at path: {self._path}")
                 self._path.mkdir(parents=True)
             if self._hpath != Path():
-                with threading.Lock():
-                    self.to_yaml_file(str(self._hpath), encoder=self._encoder) # type: ignore
+                self._skipNextReload = True
+                try:
+                    with threading.Lock():
+                        self.to_yaml_file(str(self._hpath), encoder=self._encoder) # type: ignore
+                except:
+                    self._skipNextReload = False
+                    print(f"Failed reloading layer {self._layerID}")
             self._needsSave = False
 
         def procSaveImg():
             for chunk in self._chunksToSave: self.saveChunk(chunk)
 
-        if self._needsSave or force:
+        if force:
+            procSave()
+            if img: procSaveImg()
+            return
+
+        if self._needsSave:
             print(f"Called save {self._path = }")
             if self._h: self._h.put((procSave, []))
 

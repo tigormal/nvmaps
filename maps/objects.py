@@ -35,6 +35,7 @@ class MapObject(YAMLWizard):
         self._lastSaved = None
         self._needsSave = False
         self._needsReload = True
+        self._skipNextReload = False
         self._h = None
         self.geometry = {dt.fromisoformat(key): sh.from_wkt(val) for key, val in self.geometry.copy().items()}
         # for key, val in self.geometry:
@@ -65,7 +66,9 @@ class MapObject(YAMLWizard):
         return dic
 
     def _encoder(self, dic: dict, **kwargs):
-        return yaml.dump({k: v for k, v in dic.copy().items() if v is not None}, **kwargs)
+        # d = {k: v for k, v in dic.copy().items() if v is not None}
+        # print(f"[ENCODER] Saving yaml {d}")
+        return yaml.dump(dic, **kwargs)
 
     def to_yaml(self, encoder, **encoder_kwargs):
         if encoder is None:
@@ -149,6 +152,9 @@ class MapObject(YAMLWizard):
 
     def reload(self, force=False):
         def procReload():
+            if self._skipNextReload:
+                self._skipNextReload = False
+                return
             try:
                 with open(self._path, 'r') as f:
                     with Lock():
@@ -181,12 +187,21 @@ class MapObject(YAMLWizard):
     def save(self, force=False):
 
         def procSave():
-            with Lock():
-                self.to_yaml_file(str(self._path), encoder=self._encoder) # type: ignore
-            self._needsSave = False
+            try:
+                self._skipNextReload = True
+                with Lock():
+                    self.to_yaml_file(str(self._path), encoder=self._encoder) # type: ignore
+                self._needsSave = False
+            except:
+                self._skipNextReload = False
+                print(f"Failed to save object ID {self._objectID} {self.name}")
 
-        print(f"Called save {self._path = }")
-        if (self._needsSave or force) and self._path != Path():
+        # print(f"Called save {self._path = }")
+        if self._path == Path(): return
+        if force:
+            procSave()
+            return
+        if self._needsSave:
             if self._h: self._h.put((procSave, []))
 
     def deleteFromDisk(self):
@@ -213,7 +228,7 @@ class MapObject(YAMLWizard):
         for key, val in dic.items():
             if key in list(self._propNames):
                 key = self._propNames[key]
-            print(f"{self._objectID} Updating {key = } {val =}")
+            # print(f"{self._objectID} Updating {key = } {val =}")
             if key == 'geometry':
                 if skipGeometry: continue
                 if isinstance(val, dict):
@@ -231,9 +246,11 @@ class MapObject(YAMLWizard):
                         latestTime = dt.now(dt.now().astimezone().tzinfo)
                     else:
                         latestTime = max(list(self.geometry))
-                    self.geometry[latestTime] = val
-                else:
-                    self.geometry[dt.now(dt.now().astimezone().tzinfo)] = val
+                    # self.geometry[latestTime] = val
+                    self.geometry.pop(latestTime)
+                # else:
+                self.geometry[dt.now(dt.now().astimezone().tzinfo)] = val
+                # print(f"{self._objectID} Updating {key = } {val = }")
                 continue
             if hasattr(self, key):
                 self.__setattr__(key, val)

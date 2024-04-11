@@ -25,7 +25,7 @@ from .objects import MapObject
 class DelayedHandler():
 
     def __init__(self, parent) -> None:
-        self.interval = 0.5
+        self.interval = 0.1 # [s]
         self.parent = parent
         self.queue = Queue()
         self.th = threading.Thread(target=self.main)
@@ -53,9 +53,9 @@ class DelayedHandler():
         while True:
             if self._stop: break
             if (dt.now() - self._lastCheck).total_seconds() >= self.interval:
-                print("[TIMEOUT] Check save reload")
+                # print("[TIMEOUT] Check save")
                 self._lastCheck = dt.now()
-                self.parent.reloadAll()
+                # self.parent.reloadAll()
                 self.parent.saveAll()
             # self.queue.join()
 
