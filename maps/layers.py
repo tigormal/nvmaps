@@ -205,9 +205,9 @@ class MapLayer(YAMLWizard):
             if self._h: self._h.put((procReload, []))
 
     def _reloadInfo(self, force=False):
-        if self._skipNextReload:
-            self._skipNextReload = False
-            return
+        # if self._skipNextReload:
+        #     self._skipNextReload = False
+        #     return
         if self._isReloading: return
         if self._hpath != Path():
             self._isReloading = True

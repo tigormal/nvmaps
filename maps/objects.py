@@ -154,9 +154,9 @@ class MapObject(YAMLWizard):
 
     def reload(self, force=False):
         def procReload():
-            if self._skipNextReload:
-                self._skipNextReload = False
-                return
+            # if self._skipNextReload:
+            #     self._skipNextReload = False
+            #     return
             if self._isReloading: return
             try:
                 self._isReloading = True
@@ -241,26 +241,22 @@ class MapObject(YAMLWizard):
             # print(f"{self._objectID} Updating {key = } {val =}")
             if key == 'geometry':
                 if skipGeometry: continue
-                if isinstance(val, dict):
+                print(f"{self._objectID} Updating {key = } {val = }")
+                if isinstance(val, dict): # given a dict[time, wkt]
+                    if not modifyGeometry: self.geometry.clear()
                     for k, v in val.items():
                         if type(k) is str: k = dt.fromisoformat(k)
                         if type(v) is str: v = sh.from_wkt(v)
                         self.geometry[k] = v
                     continue
-                if isinstance(val, str):
+                if isinstance(val, str): # value is given as WKT
                     val = sh.from_wkt(val)
                 if not isinstance(val, sh.Geometry):
                     raise Exception(f"Update geometry value is not Geometry type, not {type(val)}")
                 if modifyGeometry:
-                    if len(list(self.geometry)) == 0:
-                        latestTime = dt.now(dt.now().astimezone().tzinfo)
-                    else:
-                        latestTime = max(list(self.geometry))
-                    # self.geometry[latestTime] = val
-                    self.geometry.pop(latestTime)
-                # else:
+                    if len(list(self.geometry)) > 0:
+                        self.geometry.pop(max(list(self.geometry)))
                 self.geometry[dt.now(dt.now().astimezone().tzinfo)] = val
-                # print(f"{self._objectID} Updating {key = } {val = }")
                 continue
             if hasattr(self, key):
                 self.__setattr__(key, val)
