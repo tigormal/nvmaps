@@ -41,6 +41,8 @@ class MapLayer(YAMLWizard):
         self._lastSaved = None
         self._needsSave = False
         self._needsReload = True
+        self._isReloading = False
+        self._isSaving = False
         self._skipNextReload = False
         self._h = None
         self._images = {}
@@ -206,14 +208,21 @@ class MapLayer(YAMLWizard):
         if self._skipNextReload:
             self._skipNextReload = False
             return
+        if self._isReloading: return
         if self._hpath != Path():
-            with open(self._hpath, 'r') as f:
-                with threading.Lock():
-                    # s = f.read()
-                    dic = yaml.safe_load(f)
-                print(f"Reloading layer info, read dict from file: {dic}")
-                # new = MapLayer.from_yaml_file(str(self._hpath))
-                # new = MapLayer.from_yaml(s)
+            self._isReloading = True
+            try:
+                with open(self._hpath, 'r') as f:
+                    with threading.Lock():
+                        # s = f.read()
+                        dic = yaml.safe_load(f)
+                    print(f"Reloading layer info, read dict from file: {dic}")
+                    # new = MapLayer.from_yaml_file(str(self._hpath))
+                    # new = MapLayer.from_yaml(s)
+            except Exception as e:
+                print(f"")
+            finally:
+                self._isReloading = False
             # if isinstance(new, list): new = new[0]
             # self.update(yaml.safe_load(self._hpath.read_text()))
             # self.update(asdict(new))
@@ -264,6 +273,7 @@ class MapLayer(YAMLWizard):
     def save(self, img=False, force=False):
 
         def procSave():
+            if self._isSaving: return
             if self._path == Path():
                 print("Attempting to save with empty path")
                 return
@@ -272,12 +282,15 @@ class MapLayer(YAMLWizard):
                 self._path.mkdir(parents=True)
             if self._hpath != Path():
                 self._skipNextReload = True
+                self._isSaving = True
                 try:
                     with threading.Lock():
                         self.to_yaml_file(str(self._hpath), encoder=self._encoder) # type: ignore
                 except:
                     self._skipNextReload = False
                     print(f"Failed reloading layer {self._layerID}")
+                finally:
+                    self._isSaving = False
             self._needsSave = False
 
         def procSaveImg():

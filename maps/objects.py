@@ -36,6 +36,8 @@ class MapObject(YAMLWizard):
         self._needsSave = False
         self._needsReload = True
         self._skipNextReload = False
+        self._isSaving = False
+        self._isReloading = False
         self._h = None
         self.geometry = {dt.fromisoformat(key): sh.from_wkt(val) for key, val in self.geometry.copy().items()}
         # for key, val in self.geometry:
@@ -155,7 +157,9 @@ class MapObject(YAMLWizard):
             if self._skipNextReload:
                 self._skipNextReload = False
                 return
+            if self._isReloading: return
             try:
+                self._isReloading = True
                 with open(self._path, 'r') as f:
                     with Lock():
                         # s = f.read()
@@ -166,6 +170,8 @@ class MapObject(YAMLWizard):
             except Exception as e:
                 print(f"Reload for object {self._objectID} failed. Reason: {e}")
                 return
+            finally:
+                self._isReloading = False
             # if isinstance(new, list): new = new[0]
             # print(f"{self._objectID} RELOAD \n{asdict(new)}")
             # self.update(asdict(new))
@@ -187,14 +193,18 @@ class MapObject(YAMLWizard):
     def save(self, force=False):
 
         def procSave():
+            if self._isSaving: return
             try:
                 self._skipNextReload = True
+                self._isSaving = True
                 with Lock():
                     self.to_yaml_file(str(self._path), encoder=self._encoder) # type: ignore
                 self._needsSave = False
             except:
                 self._skipNextReload = False
                 print(f"Failed to save object ID {self._objectID} {self.name}")
+            finally:
+                self._isSaving = False
 
         # print(f"Called save {self._path = }")
         if self._path == Path(): return
