@@ -6,7 +6,7 @@ import shapely as sh
 from pathlib import Path
 from typing import Iterable, List, DefaultDict, Any, Optional
 from PIL import Image
-import os, yaml, shutil
+import os, yaml, shutil, logging
 import  numpy as np
 from pydispatch import dispatcher
 from watchdog.observers import Observer
@@ -38,6 +38,7 @@ class MapLayer(YAMLWizard):
         self._path = Path()
         self._hpath = Path()
         self._layerID = -1
+        self._log = logging.getLogger(f"Maps.Layer {self._layerID}")
         self._lastSaved = None
         self._needsSave = False
         self._needsReload = True
@@ -75,9 +76,9 @@ class MapLayer(YAMLWizard):
         if not silent: dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": obj})
 
     def deleteObject(self, obj: MapObject | None, *, fromdisk=True):
-        print(f"Delete object called for ID {obj._objectID} in layer {self._layerID}")
+        self._log.debug(f"Delete object called for ID {obj._objectID} in layer {self._layerID}")
         if obj:
-            print("Deleting...")
+            self._log.debug("Deleting...")
             # try:
             #     if obj.ref is not None:
             #         obj.ref.delete()
@@ -114,7 +115,7 @@ class MapLayer(YAMLWizard):
             if key.startswith('_'): continue  # skip private
             if key in list(self._propNames):
                 key = self._propNames[key]
-            # print(f"L{self._layerID} Updating {key = } {val = }")
+            # self._log.debug((f"L{self._layerID} Updating {key = } {val = }")
             if hasattr(self, key):
                 self.__setattr__(key, val)
         dispatcher.send(mapLayerUpdatedEvent, sender=self, event={"change": dic})
@@ -172,6 +173,7 @@ class MapLayer(YAMLWizard):
 
     def _calculatePath(self):
         if self._parent:
+            self._log = logging.getLogger(f"Maps.Layer {self._layerID}")
             base: Path = self._parent._path
             self._path = base / ('L' + str(self._layerID))
             self._hpath = self._path / DEFAULT_HEADER_NAME
@@ -216,33 +218,33 @@ class MapLayer(YAMLWizard):
                     with threading.Lock():
                         # s = f.read()
                         dic = yaml.safe_load(f)
-                    # print(f"Reloading layer info, read dict from file: {dic}")
+                    # self._log.debug((f"Reloading layer info, read dict from file: {dic}")
                     # new = MapLayer.from_yaml_file(str(self._hpath))
                     # new = MapLayer.from_yaml(s)
+                self.update(dic)
             except Exception as e:
-                print(f"")
+                self._log.debug(f"")
             finally:
                 self._isReloading = False
             # if isinstance(new, list): new = new[0]
             # self.update(yaml.safe_load(self._hpath.read_text()))
             # self.update(asdict(new))
-            self.update(dic)
 
     def _reloadObjects(self, force=False):
 
         def getObjectID(path: Path): return int(path.stem)
 
         objfiles = list([Path(p) for p in glob(str(self._path/OBJECT_PATTERN))])
-        print(f"L{self._layerID} Reloading object files: {list(objfiles)}")
+        self._log.debug(f"L{self._layerID} Reloading object files: {list(objfiles)}")
         newObjectIDs = list([getObjectID(o) for o in objfiles])
         objTup = zip(objfiles, newObjectIDs)
-        # print(objTup)
-        print(f"L{self._layerID} Existing objects: {self.objects}")
+        # self._log.debug((objTup)
+        self._log.debug(f"L{self._layerID} Existing objects: {self.objects}")
         oldObjectIDs = set([o._objectID for o in self.objects])
         newObjectIDs = set(newObjectIDs)
         objtocreate = newObjectIDs - oldObjectIDs
         objtodelete = oldObjectIDs - newObjectIDs
-        print(f"Objects to be created: {objtocreate} \nObjects to be deleted: {objtodelete}")
+        self._log.debug(f"Objects to be created: {objtocreate} \nObjects to be deleted: {objtodelete}")
         for file, num in objTup:
             if num in objtocreate:
                 # new = MapObject.from_yaml_file(str(file))
@@ -275,10 +277,10 @@ class MapLayer(YAMLWizard):
         def procSave():
             if self._isSaving: return
             if self._path == Path():
-                print("Attempting to save with empty path")
+                self._log.warning("Attempting to save with empty path")
                 return
             if not self._path.exists():
-                print(f"Creating directory for layer at path: {self._path}")
+                self._log.debug(f"Creating directory for layer at path: {self._path}")
                 self._path.mkdir(parents=True)
             if self._hpath != Path():
                 self._skipNextReload = True
@@ -288,7 +290,7 @@ class MapLayer(YAMLWizard):
                         self.to_yaml_file(str(self._hpath), encoder=self._encoder) # type: ignore
                 except:
                     self._skipNextReload = False
-                    print(f"Failed reloading layer {self._layerID}")
+                    self._log.error(f"Failed reloading layer {self._layerID}")
                 finally:
                     self._isSaving = False
             self._needsSave = False
@@ -302,7 +304,7 @@ class MapLayer(YAMLWizard):
             return
 
         if self._needsSave:
-            print(f"Called save {self._path = }")
+            self._log.debug(f"Called save {self._path = }")
             if self._h: self._h.put((procSave, []))
 
         if img:
@@ -312,7 +314,7 @@ class MapLayer(YAMLWizard):
     def saveChunk(self, chunk):
         if img := self._im.get(chunk):
             path = self._path / (chunk + '.tiff')
-            print(f"Saving chunk image at path: {path}")
+            self._log.debug(f"Saving chunk image at path: {path}")
             with threading.Lock():
                 img.save(path, format="TIFF", save_all=True)
             self._im.pop(chunk)

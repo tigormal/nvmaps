@@ -9,7 +9,7 @@ from typing import Iterable, List, DefaultDict, Any, Optional
 from pydispatch import dispatcher
 from datetime import datetime as dt, timezone as tz
 from glob import glob
-import os, yaml
+import os, yaml, logging
 from .defs import *
 
 
@@ -30,6 +30,7 @@ class MapObject(YAMLWizard):
     def __post_init__(self):
         self._parent = None
         self._objectID = -1
+        self._log = logging.getLogger(f"Maps.Object {self._objectID}")
         self.ref: Any = None
         self._path = Path()
         self._lastSaved = None
@@ -47,7 +48,7 @@ class MapObject(YAMLWizard):
         # g = {key.astimezone().isoformat(): sh.to_wkt(val) for key, val in self.geometry.copy().items()}
         g = {}
         for key, val in self.geometry.copy().items():
-            # print(f"TO_DICT: {type(key), key}: {type(val), val}")
+            # self._log.debug((f"TO_DICT: {type(key), key}: {type(val), val}")
             g[key.astimezone().isoformat()] = sh.to_wkt(val)
         dic = {
             "NAME": self.name,
@@ -69,7 +70,7 @@ class MapObject(YAMLWizard):
 
     def _encoder(self, dic: dict, **kwargs):
         # d = {k: v for k, v in dic.copy().items() if v is not None}
-        # print(f"[ENCODER] Saving yaml {d}")
+        # self._log.debug((f"[ENCODER] Saving yaml {d}")
         return yaml.dump(dic, **kwargs)
 
     def to_yaml(self, encoder, **encoder_kwargs):
@@ -140,6 +141,7 @@ class MapObject(YAMLWizard):
 
     def _calculatePath(self):
         if self._parent:
+            self._log = logging.getLogger(f"Maps.Object {self._objectID}")
             base: Path = self._parent._path
             if base == Path(): self._path = Path(); return
             self._path = base / (str(self._objectID) + DEFAULT_EXT)
@@ -164,16 +166,16 @@ class MapObject(YAMLWizard):
                     with Lock():
                         # s = f.read()
                         dic = yaml.safe_load(f)
-                    # print(f"Reloading object info, read dict from file: {dic}")
+                    # self._log.debug((f"Reloading object info, read dict from file: {dic}")
                     # new = MapObject.from_yaml_file(str(self._path))
                     # new = MapObject.from_yaml(s)
             except Exception as e:
-                print(f"Reload for object {self._objectID} failed. Reason: {e}")
+                self._log.error(f"Reload for object {self._objectID} failed. Reason: {e}")
                 return
             finally:
                 self._isReloading = False
             # if isinstance(new, list): new = new[0]
-            # print(f"{self._objectID} RELOAD \n{asdict(new)}")
+            # self._log.debug((f"{self._objectID} RELOAD \n{asdict(new)}")
             # self.update(asdict(new))
             self.update(dic)
             self._needsSave = False
@@ -202,11 +204,11 @@ class MapObject(YAMLWizard):
                 self._needsSave = False
             except:
                 self._skipNextReload = False
-                print(f"Failed to save object ID {self._objectID} {self.name}")
+                self._log.debug(f"Failed to save object ID {self._objectID} {self.name}")
             finally:
                 self._isSaving = False
 
-        # print(f"Called save {self._path = }")
+        # self._log.debug((f"Called save {self._path = }")
         if self._path == Path(): return
         if force:
             procSave()
@@ -216,7 +218,7 @@ class MapObject(YAMLWizard):
 
     def deleteFromDisk(self):
         if self._path != Path():
-            print(f"Deleting object file: {self._path}")
+            self._log.debug(f"Deleting object file: {self._path}")
             with Lock():
                 os.unlink(self._path)
 
@@ -238,10 +240,10 @@ class MapObject(YAMLWizard):
         for key, val in dic.items():
             if key in list(self._propNames):
                 key = self._propNames[key]
-            # print(f"{self._objectID} Updating {key = } {val =}")
+            # self._log.debug((f"{self._objectID} Updating {key = } {val =}")
             if key == 'geometry':
                 if skipGeometry: continue
-                # print(f"{self._objectID} Updating {key = } {val = }")
+                # self._log.debug((f"{self._objectID} Updating {key = } {val = }")
                 if isinstance(val, dict): # given a dict[time, wkt]
                     if not modifyGeometry: self.geometry.clear()
                     for k, v in val.items():
