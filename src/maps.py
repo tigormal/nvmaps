@@ -10,8 +10,6 @@ import  numpy as np
 from pydispatch import dispatcher
 from watchdog.observers import Observer
 import watchdog.events
-# from watchdog.events import FileSystemEventHandler
-from lockfile import Lock
 from glob import glob, iglob
 from queue import Queue
 from datetime import datetime as dt
@@ -29,7 +27,6 @@ class DelayedHandler():
         self.parent = parent
         self.queue = Queue()
         self.th = threading.Thread(target=self.main)
-        # self.th2 = threading.Thread(target=self.checkSaveReload)
         self._stop = False
         self._lastCheck = dt.now()
         self._log = logging.getLogger("Maps.DelayedHandler")
@@ -45,8 +42,7 @@ class DelayedHandler():
                 self._log.error(f"Task failed: {func.__name__}. Reason: {e}")
             self.queue.task_done()
             if self._stop: break
-            # self.checkSaveReload()
-            #
+
     def put(self, *args):
         self.queue.put(*args)
 
@@ -54,11 +50,8 @@ class DelayedHandler():
         while True:
             if self._stop: break
             if (dt.now() - self._lastCheck).total_seconds() >= self.interval:
-                # self._log.debug("[TIMEOUT] Check save")
                 self._lastCheck = dt.now()
-                # self.parent.reloadAll()
                 self.parent.saveAll()
-            # self.queue.join()
 
     def stop(self):
         self._stop = True
@@ -67,7 +60,6 @@ class DelayedHandler():
 
     def start(self):
         self.th.start()
-        # self.th2.start()
 
 
 
@@ -91,8 +83,6 @@ class MapFileHandler(watchdog.events.PatternMatchingEventHandler):
         self.h.queue.put((self.on_deleted_handler, [event.src_path]))
     def on_created(self, event):
         self.h.queue.put((self.on_created_handler, [event.src_path]))
-    # def quit(self):
-    #     self.h.queue.put((self.stop, []))
 
     def on_modified_handler(self, src_path):
         if src_path:
@@ -136,14 +126,10 @@ class MapFileHandler(watchdog.events.PatternMatchingEventHandler):
                 # Thats object file
                 onum = int(path.stem)
                 if o := self.parent.object(onum):
-                    # with threading.Lock():
-                    # o.lazyReload()
                     o.reload(force=True)
                 else:
                     new = MapObject()
                     new._objectID = onum
-                    # new.lazyReload()
-                    # new.reload(force=True)
                     self.parent.addObject(new, reload=True)
                 self._log.debug(f"CREATED OBJECT {onum} in map")
 
@@ -170,8 +156,6 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
         self.h.queue.put((self.on_deleted_handler, [event]))
     def on_created(self, event):
         self.h.queue.put((self.on_created_handler, [event]))
-    # def quit(self):
-    #     self.queue.put((self.stop, []))
 
     def on_modified_handler(self, event):
         if event:
@@ -181,9 +165,7 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
             lnum = int(lname.strip('L'))
             if path.name == DEFAULT_HEADER_NAME:
                 if l := self.parent.layer(lnum):
-                    # with threading.Lock():
                     l._reloadInfo(force=True)
-                    # l.lazyReload()
                     self._log.debug(f"UPDATED LAYER {lnum} INFO")
                 return
             if path.stem[0].isdigit():
@@ -191,11 +173,8 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
                 onum = int(path.stem)
                 if l := self.parent.layer(lnum):
                     if o := l.object(onum):
-                        # with threading.Lock():
-                        # o.lazyReload()
                         o.reload(force=True)
                         self._log.debug(f"UPDATED OBJECT {onum} in layer {lnum}")
-                    # l._reloadObjects()
             else:
                 # that's chunk image
                 chunk = path.stem
@@ -232,14 +211,10 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
                 self._log.debug("header")
                 if l:=self.parent.layer(lnum):
                     # with threading.Lock():
-                    # l.reload()
-                    # l.lazyReload()
                     l._reloadInfo(force=True)
                 else:
                     new = MapLayer()
                     new._layerID = lnum
-                    # with threading.Lock():
-                    # new.lazyReload()
                     new.reload(force=True)
                     self.parent.addLayer(new)
                     self._log.debug(f"CREATED LAYER {lnum} in map")
@@ -249,19 +224,11 @@ class MapLayerFileHandler(watchdog.events.PatternMatchingEventHandler):
                 self._log.debug("object")
                 onum = int(path.stem)
                 if l := self.parent.layer(lnum):
-                    # l._reloadObjects()
                     if o:=l.object(onum):
-                        # with threading.Lock():
-                        # o.lazyReload()
                         o.reload(force=True)
                     else:
                         new = MapObject()
                         new._objectID = onum
-                        # with threading.Lock():
-                        # new.lazyReload()
-                        #
-                        # new.setParent(l)
-                        # new.reload(force=True)
                         l.addObject(new, reload=True)
                         self._log.debug(f"CREATED OBJECT {onum} in layer {lnum}")
             else:
@@ -277,13 +244,11 @@ class Map(YAMLWizard):
     name: str = "No name"
     datum: str = ""
     sys: int = GlobalCoordinateKind.xyz.value
-    # path: str = json_field("path", dump=False, default="")  # type: ignore
-    # layers: DefaultDict[str, MapLayer] = field(default_factory=DefaultDict)
 
     def __post_init__(self):
         self._observer = None
         self._started = False
-        self._path = Path() #str(Path(self.path).expanduser().resolve())
+        self._path = Path()
         self._hpath = Path()
         self._lastSaved = None
         self._needsSave = False
@@ -293,13 +258,7 @@ class Map(YAMLWizard):
         self.objects: list[MapObject] = []
         self._log = logging.getLogger("Maps.Map")
 
-        # for l in self.layers:
-        #     self.layers[l]._parent = self
-        # if observe: self.start()
-
         dispatcher.connect(self.on_file_updated, sender=dispatcher.Any, signal=mapFileUpdatedEvent)
-        # dispatcher.connect(self.on_file_created, sender=dispatcher.Any, signal=mapFileCreatedEvent)
-        # dispatcher.connect(self.on_file_deleted, sender=dispatcher.Any, signal=mapFileDeletedEvent)
 
     # TODO: implement event casting for map updates
 
@@ -308,18 +267,14 @@ class Map(YAMLWizard):
         if self._started:
             return
         self._observer = Observer()
-        # self._fshandler = MapFileHandler(self)
         self._layerfh = MapLayerFileHandler(self, self._h)
         self._mapfh = MapFileHandler(self, self._h)
         if self._path and self._path != Path():
             try:
                 self._log.debug("start")
-                # self._observer.schedule(self._fshandler, path=self._path, recursive=True)
                 self._observer.schedule(self._layerfh, path=self._path, recursive=True)
                 self._observer.schedule(self._mapfh, path=self._path, recursive=True)
                 self._h.start()
-                # self._mapfh.start()
-                # self._layerfh.start()
                 self._observer.start()
                 self._started = True
             except Exception as e:
@@ -330,8 +285,6 @@ class Map(YAMLWizard):
             self._log.debug("stopping obs")
             self._observer.stop()
             self._h.stop()
-            # self._mapfh.quit()
-            # self._layerfh.quit()
             self._observer.join()
 
     def addObject(self, obj: MapObject, *, reload=False, silent=False):
@@ -387,11 +340,6 @@ class Map(YAMLWizard):
     def deleteObject(self, obj: MapObject | None, *, fromdisk=False):
         if obj:
             self._log.debug(f"Delete object called for ID {obj._objectID} in map")
-            # try:
-            #     if obj.ref is not None:
-            #         obj.ref.delete()
-            # except:
-            #     pass
             if fromdisk: obj.deleteFromDisk()
             dispatcher.send(mapObjectDeletedEvent, sender=self, event={"object": obj})
             self.objects.remove(obj)
@@ -407,8 +355,6 @@ class Map(YAMLWizard):
         def procSave():
             if not self._path.exists():
                 os.mkdir(str(self._path))
-            # with Lock(self._path):
-            # with threading.Lock():
             self.to_yaml_file(str(self._path / Path(DEFAULT_HEADER_NAME)))
             dispatcher.send(mapSavedEvent, sender=self)
 
@@ -417,7 +363,6 @@ class Map(YAMLWizard):
             self._h.put((procSave, []))
 
     def saveAll(self, force=False):
-        # with Lock(self._path):
         self.save(force)
         for l in self.layers: l.saveAll(force)
         for o in self.objects: o.save(force)
@@ -436,7 +381,6 @@ class Map(YAMLWizard):
         def getObjectID(path: Path): return int(path.stem)
 
         files = iglob(str(self._path / OBJECT_PATTERN))
-        # self._log.debug(f"Map Reloading object files: {list(files)}")
         oldIDs = set([o._objectID for o in self.objects])
         newIDs = set()
         self._log.debug(f"Map Existing objects: {oldIDs}")
@@ -445,9 +389,6 @@ class Map(YAMLWizard):
             path = Path(file)
             id = getObjectID(path)
             newIDs.add(id)
-            # if id in oldIDs:
-            #     ## Exists, ~~reload~~ do nothing
-            #     ...
             if not (id in oldIDs):
                 ## Load file and add to this map
                 self._log.debug(f"Creating object with ID {id}:")
@@ -455,13 +396,9 @@ class Map(YAMLWizard):
                 if isinstance(new, list): new = new[0]
                 new._objectID = id
                 new.setParent(self)
-                # new._needsReload = True
                 new.reload(force)
-                # self._log.debug(new)
                 self.objects.append(new)
                 dispatcher.send(mapObjectCreatedEvent, sender=self, event={"object": new})
-            # else:
-            #     self._log.debug(f"Object ID {id} is in existing IDs")
         todelete = oldIDs - newIDs
         self._log.debug(f"Object IDs to delete:{todelete}")
         for x in self.objects:
@@ -547,20 +484,6 @@ class Map(YAMLWizard):
         full_path = Path(path).expanduser().resolve()
         logger = logging.getLogger("Maps")
         logger.info(f"Loading map at path: {str(full_path)}")
-        # with Lock(full_path):
-        #     header = str(full_path / Path(DEFAULT_HEADER_NAME))
-        #     with open(header, "r") as f:
-        #         h = f.read()
-        #         # self._log.debug(h)
-        #         _map = Map.from_yaml(h)
-        # if isinstance(_map, list):
-        #     _map = _map[0]
-        # if isinstance(_map, Map):
-        #     _map._path = str(full_path)
-        # for layerObject in _map.layers:
-        #     layerObject.name = layerName
-        #     for obj in layerObject.objects:
-        #         obj.layer = layerName
         instance = cls()
         instance._path = full_path
         instance._calculatePath()

@@ -11,7 +11,6 @@ import  numpy as np
 from pydispatch import dispatcher
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from lockfile import Lock
 import threading
 from glob import glob
 from .defs import *
@@ -50,8 +49,6 @@ class MapLayer(YAMLWizard):
         self.size = float(self.size)
         self.ref = None
 
-    # def to_dict(self):
-    #     return asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
 
     def _encoder(self, dic: dict, **kwargs):
         return yaml.dump({k: v for k, v in dic.copy().items() if v is not None}, **kwargs)
@@ -115,7 +112,6 @@ class MapLayer(YAMLWizard):
             if key.startswith('_'): continue  # skip private
             if key in list(self._propNames):
                 key = self._propNames[key]
-            # self._log.debug((f"L{self._layerID} Updating {key = } {val = }")
             if hasattr(self, key):
                 self.__setattr__(key, val)
         dispatcher.send(mapLayerUpdatedEvent, sender=self, event={"change": dic})
@@ -207,28 +203,18 @@ class MapLayer(YAMLWizard):
             if self._h: self._h.put((procReload, []))
 
     def _reloadInfo(self, force=False):
-        # if self._skipNextReload:
-        #     self._skipNextReload = False
-        #     return
         if self._isReloading: return
         if self._hpath != Path():
             self._isReloading = True
             try:
                 with open(self._hpath, 'r') as f:
                     with threading.Lock():
-                        # s = f.read()
                         dic = yaml.safe_load(f)
-                    # self._log.debug((f"Reloading layer info, read dict from file: {dic}")
-                    # new = MapLayer.from_yaml_file(str(self._hpath))
-                    # new = MapLayer.from_yaml(s)
                 self.update(dic)
             except Exception as e:
                 self._log.debug(f"")
             finally:
                 self._isReloading = False
-            # if isinstance(new, list): new = new[0]
-            # self.update(yaml.safe_load(self._hpath.read_text()))
-            # self.update(asdict(new))
 
     def _reloadObjects(self, force=False):
 
@@ -247,9 +233,7 @@ class MapLayer(YAMLWizard):
         self._log.debug(f"Objects to be created: {objtocreate} \nObjects to be deleted: {objtodelete}")
         for file, num in objTup:
             if num in objtocreate:
-                # new = MapObject.from_yaml_file(str(file))
                 new = MapObject()
-                # if isinstance(new, list): new = new[0]
                 if len(oldObjectIDs) == 0: new._objectID = 0
                 else: new._objectID = max(oldObjectIDs)+1
                 new.setParent(self)

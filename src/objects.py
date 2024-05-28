@@ -1,5 +1,4 @@
 from dataclasses import KW_ONLY, dataclass, field, asdict
-# from lockfile import Lock
 from threading import Lock
 from addict import Dict
 from dataclass_wizard import json_field, YAMLWizard, JSONWizard
@@ -41,14 +40,10 @@ class MapObject(YAMLWizard):
         self._isReloading = False
         self._h = None
         self.geometry = {dt.fromisoformat(key): sh.from_wkt(val) for key, val in self.geometry.copy().items()}
-        # for key, val in self.geometry:
-            # self.geometry[key] = sh.from_wkt(val)
 
     def to_dict(self):
-        # g = {key.astimezone().isoformat(): sh.to_wkt(val) for key, val in self.geometry.copy().items()}
         g = {}
         for key, val in self.geometry.copy().items():
-            # self._log.debug((f"TO_DICT: {type(key), key}: {type(val), val}")
             g[key.astimezone().isoformat()] = sh.to_wkt(val)
         dic = {
             "NAME": self.name,
@@ -62,20 +57,15 @@ class MapObject(YAMLWizard):
             "AMPS": self.amps
         }
         dic = {k: v for k, v in dic.items() if v is not None}
-        # dic = {k: v for k, v in asdict(self).copy().items() if v is not None}
-        # dic = asdict(self, dict_factory=lambda x: {k: v for (k, v) in x if v is not None})
-        # dic["geometry"] = g
         dic["GEOM"] = g
         return dic
 
     def _encoder(self, dic: dict, **kwargs):
-        # d = {k: v for k, v in dic.copy().items() if v is not None}
-        # self._log.debug((f"[ENCODER] Saving yaml {d}")
         return yaml.dump(dic, **kwargs)
 
     def to_yaml(self, encoder, **encoder_kwargs):
         if encoder is None:
-            encoder = self._encoder#yaml.dump
+            encoder = self._encoder
         return encoder(self.to_dict(), **encoder_kwargs)
 
     @property
@@ -121,8 +111,6 @@ class MapObject(YAMLWizard):
                     res.append(obj.last)
             else:
                 res.append(obj)
-        # if res[0] != res[-1]:
-        #     res.append(res[0])
         if time is None:
             time = dt.now(dt.now().astimezone().tzinfo)
         self.geometry[time] = sh.Polygon(res)
@@ -132,12 +120,6 @@ class MapObject(YAMLWizard):
         if isinstance(self.geometry, sh.Polygon):
             # TODO: Add hole to existing polygon
             ...
-
-    # def __hash__(self):
-    #     return self._objectID
-
-    # def __eq__(self, other):
-    #     return self._objectID == other._objectID
 
     def _calculatePath(self):
         if self._parent:
@@ -156,34 +138,20 @@ class MapObject(YAMLWizard):
 
     def reload(self, force=False):
         def procReload():
-            # if self._skipNextReload:
-            #     self._skipNextReload = False
-            #     return
             if self._isReloading: return
             try:
                 self._isReloading = True
                 with open(self._path, 'r') as f:
                     with Lock():
-                        # s = f.read()
                         dic = yaml.safe_load(f)
-                    # self._log.debug((f"Reloading object info, read dict from file: {dic}")
-                    # new = MapObject.from_yaml_file(str(self._path))
-                    # new = MapObject.from_yaml(s)
             except Exception as e:
                 self._log.error(f"Reload for object {self._objectID} failed. Reason: {e}")
                 return
             finally:
                 self._isReloading = False
-            # if isinstance(new, list): new = new[0]
-            # self._log.debug((f"{self._objectID} RELOAD \n{asdict(new)}")
-            # self.update(asdict(new))
             self.update(dic)
             self._needsSave = False
             self._needsReload = False
-            # self.from_yaml_file(str(self._path))
-            # dic = yaml.safe_load(self._path.read_text())
-            # self.update(dic, skipGeometry=True)
-            # self.geometry = {key.fromisoformat(): sh.from_wkt(val) for key, val in dic.geometry.items()}
         if self._path.exists():
             if force:
                 procReload()
@@ -208,7 +176,6 @@ class MapObject(YAMLWizard):
             finally:
                 self._isSaving = False
 
-        # self._log.debug((f"Called save {self._path = }")
         if self._path == Path(): return
         if force:
             procSave()
@@ -240,10 +207,8 @@ class MapObject(YAMLWizard):
         for key, val in dic.items():
             if key in list(self._propNames):
                 key = self._propNames[key]
-            # self._log.debug((f"{self._objectID} Updating {key = } {val =}")
             if key == 'geometry':
                 if skipGeometry: continue
-                # self._log.debug((f"{self._objectID} Updating {key = } {val = }")
                 if isinstance(val, dict): # given a dict[time, wkt]
                     if not modifyGeometry: self.geometry.clear()
                     for k, v in val.items():
